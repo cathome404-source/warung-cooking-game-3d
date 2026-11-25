@@ -1,10 +1,208 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
 <meta charset="utf-8">
-<title>Kuali Emas 3D</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuali Emas 3D — Masak. Sajikan. Jangan sampai gosong.</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a0f08; }
+  body { font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif; color: #fff7e8; }
+  #game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  #hud button { pointer-events: auto; cursor: pointer; }
+
+  /* ---- top bar ---- */
+  #topbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 96px;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 8px 14px 0; z-index: 10;
+  }
+  .topbox {
+    background: rgba(26, 15, 8, 0.72); border: 2px solid #b4762a; border-radius: 12px;
+    padding: 6px 14px; min-width: 170px; box-shadow: 0 2px 10px rgba(0,0,0,.45);
+  }
+  .topbox .label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #f5c86e; }
+  #score-value { font-size: 30px; font-weight: 900; line-height: 1; color: #ffe9b0; }
+  #combo-value { font-size: 15px; font-weight: 700; color: #ffb347; margin-top: 2px; }
+  #combo-value.hot { color: #ff5a3c; }
+  #coins-value { font-size: 26px; font-weight: 900; color: #ffd94d; line-height: 1; }
+  #stars-value { font-size: 20px; letter-spacing: 2px; color: #ffd94d; margin-top: 2px; }
+
+  /* ---- big timer, centre ---- */
+  #timer-wrap { text-align: center; position: relative; width: 170px; }
+  #timer-ring { position: absolute; left: 50%; top: -8px; transform: translateX(-50%); }
+  #timer-ring circle { fill: none; stroke-width: 6; }
+  #timer-ring .ring-bg { stroke: rgba(255, 247, 232, 0.25); }
+  #timer-ring .ring-fg { stroke: #ffb347; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+  #timer-value {
+    position: relative; font-size: 38px; font-weight: 900; line-height: 1;
+    color: #fff7e8; text-shadow: 0 2px 8px rgba(0,0,0,.7); padding-top: 32px;
+  }
+  #timer-value.low { color: #ff5a3c; }
+  #day-line {
+    margin-top: 6px; font-size: 13.5px; font-weight: 700; color: #ffe9b0; white-space: nowrap;
+    background: rgba(26, 15, 8, 0.72); border: 2px solid #b4762a; border-radius: 10px;
+    padding: 3px 10px; display: inline-block;
+  }
+
+  /* ---- order board ---- */
+  #order-board {
+    position: absolute; top: 104px; left: 14px; display: flex; flex-direction: column;
+    gap: 8px; width: 300px; z-index: 9; pointer-events: none;
+  }
+  .ticket {
+    background: linear-gradient(180deg, #fff8e6, #ffe9bd); color: #3a2410;
+    border-radius: 10px; border: 2px solid #b4762a; padding: 8px 10px;
+    box-shadow: 0 3px 10px rgba(0,0,0,.5); pointer-events: auto;
+  }
+  .ticket.current { outline: 3px solid #ff9d2e; }
+  .ticket.angry { border-color: #c0392b; }
+  .ticket .dish-name { font-size: 17px; font-weight: 900; }
+  .ticket .dish-thumb { float: right; font-size: 26px; line-height: 1; }
+  .ticket .steps { list-style: none; margin-top: 4px; font-size: 12.5px; line-height: 1.45; }
+  .ticket .steps li.done { color: #7a5a2a; text-decoration: line-through; }
+  .ticket .steps li.now { font-weight: 800; color: #c0392b; }
+  .ticket .patience { height: 7px; border-radius: 4px; background: #e0c9a0; margin-top: 6px; overflow: hidden; }
+  .ticket .patience > div { height: 100%; background: #57b25e; }
+  .ticket .patience.low > div { background: #e74c3c; }
+
+  /* ---- hand chip + tooltip ---- */
+  #hand-chip {
+    position: absolute; z-index: 20; display: none; pointer-events: none;
+    background: rgba(26, 15, 8, 0.88); border: 2px solid #ffb347; border-radius: 20px;
+    padding: 4px 12px; font-size: 14px; font-weight: 800; color: #ffe9b0;
+    transform: translate(18px, 18px); white-space: nowrap;
+  }
+  #tooltip {
+    position: absolute; z-index: 20; display: none; pointer-events: none;
+    background: rgba(26, 15, 8, 0.9); border: 1px solid #b4762a; border-radius: 8px;
+    padding: 4px 10px; font-size: 13px; font-weight: 700; color: #ffe9b0;
+    transform: translate(14px, -28px); white-space: nowrap;
+  }
+
+  /* ---- overlays ---- */
+  .overlay {
+    position: absolute; inset: 0; z-index: 30; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(12, 6, 3, 0.55); pointer-events: auto;
+  }
+  .overlay.show { display: flex; }
+  .panel {
+    background: linear-gradient(180deg, rgba(46, 26, 10, 0.96), rgba(26, 15, 8, 0.96));
+    border: 3px solid #d99a2b; border-radius: 18px; padding: 28px 36px;
+    max-width: 640px; box-shadow: 0 10px 40px rgba(0,0,0,.7);
+  }
+  .panel h1 { font-size: 52px; font-weight: 900; color: #ffc93c; letter-spacing: 1px; line-height: 1.05; text-shadow: 0 3px 0 #7a3c00, 0 6px 18px rgba(0,0,0,.6); }
+  .panel h2 { font-size: 32px; font-weight: 900; color: #ffc93c; margin-bottom: 10px; }
+  .panel .subtitle { font-size: 19px; color: #ffe9b0; margin: 10px 0 18px; }
+  .panel p { font-size: 15px; line-height: 1.55; color: #f3e2c2; margin: 6px 0; }
+  .panel .statline { font-size: 17px; font-weight: 700; color: #ffe9b0; }
+  .panel .btnrow { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .panel button {
+    font-family: inherit; font-size: 18px; font-weight: 900; color: #2a1602;
+    background: linear-gradient(180deg, #ffd94d, #f5a623); border: none; border-radius: 12px;
+    padding: 12px 26px; box-shadow: 0 4px 0 #8a5a00;
+  }
+  .panel button:active { transform: translateY(3px); box-shadow: 0 1px 0 #8a5a00; }
+  .panel button.ghost { background: transparent; color: #ffe9b0; border: 2px solid #b4762a; box-shadow: none; }
+  .howto-steps { text-align: left; margin: 12px auto 4px; max-width: 480px; font-size: 15px; line-height: 1.7; color: #f3e2c2; }
+  .howto-steps b { color: #ffc93c; }
+  .recipe-list { text-align: left; margin: 10px auto; max-width: 480px; font-size: 14px; line-height: 1.6; color: #f3e2c2; }
+  .recipe-list .locked { opacity: 0.45; }
+  .recipe-list b { color: #ffc93c; }
+  .keys-line { font-size: 13px; color: #d9b98a; margin-top: 8px; }
+  #pause-btn {
+    position: absolute; top: 104px; right: 14px; z-index: 11; pointer-events: auto;
+    background: rgba(26, 15, 8, 0.72); border: 2px solid #b4762a; color: #ffe9b0;
+    border-radius: 10px; font-size: 14px; font-weight: 800; padding: 6px 12px; cursor: pointer;
+  }
+</style>
 </head>
 <body>
-<p>Kuali Emas 3D — placeholder page. The 3D warung kitchen loads here.</p>
+<canvas id="game-canvas"></canvas>
+<div id="hud">
+  <div id="topbar">
+    <div class="topbox">
+      <div class="label">Skor</div>
+      <div id="score-value">0</div>
+      <div id="combo-value">Combo x1</div>
+    </div>
+    <div id="timer-wrap">
+      <svg id="timer-ring" width="112" height="112" viewBox="0 0 112 112">
+        <circle class="ring-bg" cx="56" cy="56" r="50"></circle>
+        <circle class="ring-fg" id="timer-ring-fg" cx="56" cy="56" r="50"></circle>
+      </svg>
+      <div id="timer-value">2:00</div>
+      <div id="day-line">Day 1 &mdash; served 0 of 4</div>
+    </div>
+    <div class="topbox" style="text-align:right">
+      <div class="label">Koin</div>
+      <div id="coins-value">0 &#127800;</div>
+      <div id="stars-value">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+    </div>
+  </div>
+
+  <div id="order-board"></div>
+  <button id="pause-btn" type="button">II Jeda (Esc)</button>
+  <div id="hand-chip"></div>
+  <div id="tooltip"></div>
+
+  <div class="overlay show" id="title-screen">
+    <div class="panel">
+      <h1>KUALI EMAS 3D</h1>
+      <div class="subtitle">Masak. Sajikan. Jangan sampai gosong.</div>
+      <p>Warung kecil di tepi jalan, senja yang hangat, dan wok yang tak pernah dingin.
+         Baca tiket, potong, masak, sajikan &mdash; sebelum pelanggan kehabisan sabar.</p>
+      <div class="btnrow">
+        <button id="btn-play" type="button">Main</button>
+        <button id="btn-howto" type="button" class="ghost">Cara Masak</button>
+        <button id="btn-sound" type="button" class="ghost">Suara: Nyala</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="howto-screen">
+    <div class="panel">
+      <h2>Cara Masak</h2>
+      <div class="howto-steps">
+        <div><b>1. Ambil</b> &mdash; klik nampan bahan di konter bawah, atau tekan 1&ndash;0.</div>
+        <div><b>2. Potong</b> &mdash; klik talenan untuk bahan yang bisa dipotong.</div>
+        <div><b>3. Masak</b> &mdash; klik wok saat bahan sudah siap; jangan sampai gosong.</div>
+        <div><b>4. Sajikan</b> &mdash; tata di piring, lalu klik jendela sajian.</div>
+        <div><b>5. Ulangi</b> &mdash; serve beruntun tanpa salah menaikkan combo sampai x3.</div>
+      </div>
+      <div class="recipe-list" id="recipe-list"></div>
+      <div class="keys-line">Tombol: 1&ndash;0 ambil bahan &middot; Spasi sajikan piring paling kiri &middot; Esc jeda</div>
+      <div class="btnrow">
+        <button id="btn-howto-close" type="button">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="day-complete-screen">
+    <div class="panel">
+      <h2 id="day-complete-title">Hari 1 Selesai!</h2>
+      <p class="statline" id="day-complete-stats"></p>
+      <div class="btnrow">
+        <button id="btn-next-day" type="button">Hari Berikutnya</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="game-over-screen">
+    <div class="panel">
+      <h2 id="game-over-title">Warung Tutup</h2>
+      <p id="game-over-reason"></p>
+      <p class="statline" id="game-over-stats"></p>
+      <div class="btnrow">
+        <button id="btn-retry-day" type="button">Ulangi Hari Ini</button>
+        <button id="btn-play-again" type="button" class="ghost">Main Lagi</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="vendor/three.min.js"></script>
+<script src="src/scene3d.js"></script>
 </body>
 </html>
