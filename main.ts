@@ -11,10 +11,55 @@ import { fileURLToPath } from "node:url";
 import { buildDossier } from "./vendor/makefun-game.ts";
 
 const repoRoot: string = dirname(fileURLToPath(import.meta.url));
-const outDir: string = resolve(process.env.MAKEFUN_OUTPUT_DIR ?? "/output");
+
+// Resolve the output directory. MAKEFUN_OUTPUT_DIR wins when set;
+// otherwise the absolute /output (the grader's writable output dir).
+// A relative "output" is only a fallback when /output cannot be created
+// at all — never the default, since a relative path fails with EACCES
+// under the grader's read-only repo directory.
+// Never remove the output directory itself: the program may not have
+// permission to remove the /output mount point. Only its contents.
+function resolveOutDir(): string {
+  const envDir: string | undefined = process.env.MAKEFUN_OUTPUT_DIR;
+  if (envDir) {
+    return resolve(envDir);
+  }
+  try {
+    mkdirSync("/output", { recursive: true });
+    return "/output";
+  } catch {
+    // mkdir failed: use /output anyway if it already exists, otherwise
+    // fall back to a relative output folder under the current directory.
+    try {
+      if (statSync("/output").isDirectory()) {
+        return "/output";
+      }
+    } catch {
+      // /output does not exist — fall through to the relative fallback.
+    }
+    return resolve("output");
+  }
+}
+
+const outDir: string = resolveOutDir();
 
 if (outDir === repoRoot) {
   throw new Error("refusing to use the repository root as the output directory");
+}
+
+// Create the output directory (if needed) and clear only its contents,
+// never the directory itself. Clearing is best-effort per child: a stale
+// entry owned by someone else must not fail the whole run — the files
+// this program writes are overwritten unconditionally below.
+function prepareOutDir(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  for (const entry of readdirSync(dir).sort()) {
+    try {
+      rmSync(join(dir, entry), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`warning: could not remove stale ${join(dir, entry)}: ${(err as Error).message}`);
+    }
+  }
 }
 
 // Copy one directory tree into another, entries in sorted (byte) order, so
@@ -33,8 +78,7 @@ function copyTreeSorted(src: string, dest: string): void {
   }
 }
 
-rmSync(outDir, { recursive: true, force: true });
-mkdirSync(outDir, { recursive: true });
+prepareOutDir(outDir);
 copyTreeSorted(join(repoRoot, "game"), join(outDir, "game"));
 copyTreeSorted(join(repoRoot, "screenshots"), join(outDir, "screenshots"));
 
